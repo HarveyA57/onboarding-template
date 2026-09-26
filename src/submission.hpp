@@ -39,12 +39,12 @@ public:
     return grid_values_[index];
   }
 
-  //Return the Start of all Grid Data so it can be Changed
+  //Return Direct Access to all Grid Values
   double* data() {
     return grid_values_.data();
   }
 
-  //Return the Start of all Grid Data as Read-Only
+  //Return Direct Read-Only Access to all Grid Values
   const double* data() const {
     return grid_values_.data();
   }
@@ -80,21 +80,26 @@ inline void apply_stencil(const Grid& old_grid, Grid& new_grid) {
   }
 
   //Get Direct Access to the Old and New Grid Values
-  //Restrict Tells the Compiler these Two Areas of Memory do not Overlap
-  const double* __restrict__ old_values = old_grid.data();
-  double* __restrict__ new_values = new_grid.data();
+  const double* old_values = old_grid.data();
+  double* new_values = new_grid.data();
 
   //Copy the Top and Bottom Boundary Rows
   for (std::size_t column = 0; column < number_of_columns; column++) {
+
+    //Copy the Top Boundary
     new_values[column] = old_values[column];
 
+    //Find and Copy the Bottom Boundary
     std::size_t bottom_index =
       ((number_of_rows - 1) * number_of_columns) + column;
 
     new_values[bottom_index] = old_values[bottom_index];
   }
 
-  //Go Through Every Row Between the Top and Bottom Boundaries
+  //Split the Interior Rows Between CPU Threads
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
   for (std::size_t row = 1; row < number_of_rows - 1; row++) {
 
     //Find Where this Row Starts in the One-Dimensional Vector
@@ -110,8 +115,13 @@ inline void apply_stencil(const Grid& old_grid, Grid& new_grid) {
     new_values[right_boundary] =
       old_values[right_boundary];
 
-    //Calculate Every Interior Value in this Row
-    for (std::size_t column = 1; column < number_of_columns - 1; column++) {
+    //Calculate Multiple Columns Efficiently when OpenMP is Available
+#ifdef _OPENMP
+#pragma omp simd
+#endif
+    for (std::size_t column = 1;
+         column < number_of_columns - 1;
+         column++) {
 
       //Find the Current Cell's Position in the Vector
       std::size_t index = row_start + column;
